@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Camera Emotion Detection</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <style>
+        /* Gradient background for the page */
+        body {
+            background: linear-gradient(135deg, #e0e7ff 0%, #f3f4f6 100%);
+        }
+
+        /* Smooth hover effects for navigation links */
+        .nav-link {
+            transition: all 0.3s ease;
+        }
+        .nav-link:hover {
+            text-decoration: underline;
+            color: #bfdbfe; /* Softer blue on hover */
+            transform: translateY(-2px);
+            display: inline-block;
+        }
+
+        /* Enhanced button styles */
+        .btn-upload {
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .btn-upload:hover {
+            background-color: #1d4ed8; /* Darker blue on hover */
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        /* File input enhancement */
+        .custom-file-input::-webkit-file-upload-button {
+            visibility: hidden;
+        }
+        .custom-file-input::before {
+            content: 'Choose File';
+            display: inline-block;
+            background: #dbeafe;
+            color: #1e40af;
+            padding: 8px 16px;
+            border-radius: 50px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .custom-file-input:hover::before {
+            background: #bfdbfe;
+        }
+        .custom-file-input:active::before {
+            background: #93c5fd;
+        }
+
+        /* Logo styling */
+        .nav-logo {
+            height: 40px; /* Adjust based on your logo's dimensions */
+            transition: transform 0.3s ease;
+        }
+        .nav-logo:hover {
+            transform: scale(1.05); /* Slight zoom on hover */
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 640px) {
+            .form-container {
+                padding: 1.5rem;
+                max-width: 90%;
+            }
+            .nav-logo {
+                height: 32px; /* Smaller logo on mobile */
+            }
+            .nav-links {
+                space-x-4; /* Reduce spacing between links on mobile */
+            }
+        }
+
+        /* Additional styles for camera feed */
+        video, canvas {
+            display: none; /* Hide raw video and canvas */
+        }
+        #frame {
+            max-width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        #results {
+            margin-top: 1rem;
+            background-color: white;
+            padding: 1rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- Header Bar -->
+    <nav class="bg-blue-600 p-2 shadow-lg" style="position: fixed; top: 0; left: 0; right: 0; z-index: 10;">
+        <div class="container mx-auto flex items-center justify-between">
+            <!-- Logo -->
+            <a href="{{ url_for('upload_image') }}">
+                <img style="border-radius: 10px; height: 50px; width: 120px; padding: 0;" src="{{ url_for('static', filename='Uploads/THD-Logo.png') }}" alt="Emotion Detection Logo" class="nav-logo">
+            </a>
+            <!-- Navigation Links -->
+            <div class="flex space-x-8 nav-links">
+                <a href="{{ url_for('upload_image') }}" class="text-white font-semibold text-lg nav-link">Image Upload</a>
+                <a href="{{ url_for('upload_video') }}" class="text-white font-semibold text-lg nav-link">Video Upload</a>
+                <a href="{{ url_for('camera_feed') }}" class="text-white font-semibold text-lg nav-link">Camera Feed</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container mx-auto p-6 pt-20">
+        <h1 class="text-3xl font-bold mb-6 text-center">Live Camera Emotion Detection</h1>
+        <div class="mb-6 flex justify-center">
+            <img id="frame" class="mx-auto rounded-lg shadow-lg max-w-full h-auto" alt="Live Camera Feed">
+        </div>
+        <div id="results" class="text-center"></div>
+        <div class="text-center mt-4">
+            <p class="text-gray-600">Real-time emotion detection from your camera feed.</p>
+            <button id="restart-btn" class="btn-upload bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 mt-4">
+                Restart Camera Feed
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const video = document.createElement('video');
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const frameImg = document.getElementById('frame');
+        const resultsDiv = document.getElementById('results');
+        const restartBtn = document.getElementById('restart-btn');
+
+        let stream = null;
+        let latestDetections = [];
+        let latestEmotionResults = [];
+
+        // Set up MediaPipe Face Detection
+        const faceDetection = new FaceDetection({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`,
+        });
+        faceDetection.setOptions({
+            model: 'short',
+            minDetectionConfidence: 0.5,
+        });
+        faceDetection.onResults((results) => {
+            latestDetections = results.detections.map((detection, index) => ({
+                id: index,
+                boundingBox: detection.boundingBox,
+            }));
+        });
+
+        // Start camera feed
+        function startCamera() {
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(s => {
+                    stream = s;
+                    video.srcObject = stream;
+                    video.play();
+                    canvas.width = video.videoWidth || 640;
+                    canvas.height = video.videoHeight || 480;
+                    detectFaces();
+                    sendFaceCrops();
+                    drawFrame();
+                })
+                .catch(err => {
+                    console.error("Error accessing camera: ", err);
+                    resultsDiv.innerHTML = "<p class='text-red-500'>Error accessing camera. Please allow camera access.</p>";
+                });
+        }
+
+        // Stop camera feed
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+                video.srcObject = null;
+                frameImg.src = '';
+                resultsDiv.innerHTML = '';
+            }
+        }
+
+        // Detect faces continuously
+        function detectFaces() {
+            faceDetection.send({ image: video }).then(() => {
+                requestAnimationFrame(detectFaces);
+            });
+        }
+
+        // Send face crops to server periodically
+        function sendFaceCrops() {
+            if (!stream || latestDetections.length === 0) {
+                setTimeout(sendFaceCrops, 500);
+                return;
+            }
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const faceData = [];
+            for (const detection of latestDetections) {
+                const bbox = detection.boundingBox;
+                const x = Math.max(0, bbox.xCenter * canvas.width - bbox.width * canvas.width / 2);
+                const y = Math.max(0, bbox.yCenter * canvas.height - bbox.height * canvas.height / 2);
+                const width = Math.min(canvas.width - x, bbox.width * canvas.width);
+                const height = Math.min(canvas.height - y, bbox.height * canvas.height);
+                const faceCanvas = document.createElement('canvas');
+                faceCanvas.width = 128;
+                faceCanvas.height = 128;
+                const faceCtx = faceCanvas.getContext('2d');
+                faceCtx.drawImage(canvas, x, y, width, height, 0, 0, 128, 128);
+                const dataURL = faceCanvas.toDataURL('image/jpeg', 0.5);
+                faceData.push({
+                    id: detection.id,
+                    image: dataURL,
+                    bbox: { x, y, width, height },
+                });
+            }
+            fetch('/process_face_crops', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ faces: faceData })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    resultsDiv.innerHTML = `<p class='text-red-500'>Error: ${data.error}</p>`;
+                } else {
+                    latestEmotionResults = data.results || [];
+                    updateResultsDisplay();
+                }
+            })
+            .catch(err => {
+                console.error("Error sending face crops: ", err);
+                resultsDiv.innerHTML = "<p class='text-red-500'>Error communicating with server.</p>";
+            });
+            setTimeout(sendFaceCrops, 500); // Send every 500ms
+        }
+
+        // Draw video and annotations
+        function drawFrame() {
+            if (!stream) return;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            if (latestDetections.length > 0) {
+                for (const detection of latestDetections) {
+                    const bbox = detection.boundingBox;
+                    const x = bbox.xCenter * canvas.width;
+                    const y = bbox.yCenter * canvas.height;
+                    const width = bbox.width * canvas.width;
+                    const height = bbox.height * canvas.height;
+                    ctx.beginPath();
+                    ctx.rect(x - width / 2, y - height / 2, width, height);
+                    ctx.lineWidth = 2;
+                    ctx.strokeStyle = 'green';
+                    ctx.stroke();
+                    // Fix the face ID comparison
+                    const emotionResult = latestEmotionResults.find(result => result.face_id === "face_" + detection.id);
+                    if (emotionResult) {
+                        ctx.fillStyle = 'white';
+                        ctx.font = '16px Arial';
+                        // Display SI and category on the second line
+                        ctx.fillText(
+                            `SI: ${emotionResult.satisfaction_index} (${emotionResult.satisfaction_category})`,
+                            x - width / 2,
+                            y - height / 2 - 25
+                        );
+                        // Display emotion and confidence on the first line
+                        ctx.fillText(
+                            `${emotionResult.max_emotion}: ${emotionResult.confidence}%`,
+                            x - width / 2,
+                            y - height / 2 - 10
+                        );
+                    }
+                }
+            }
+            frameImg.src = canvas.toDataURL('image/jpeg', 0.5);
+            requestAnimationFrame(drawFrame);
+        }
+
+        // Update results display
+        function updateResultsDisplay() {
+            let html = '';
+            if (latestEmotionResults.length > 0) {
+                latestEmotionResults.forEach(result => {
+                    html += `<p class='text-gray-800'>Face ${result.face_id.replace('face_', '')}: ${result.max_emotion} (${result.confidence}%), SI: ${result.satisfaction_index} (${result.satisfaction_category})</p>`;
+                });
+            } else {
+                html = "<p class='text-gray-600'>No faces detected.</p>";
+            }
+            resultsDiv.innerHTML = html;
+        }
+
+        // Restart button handler
+        restartBtn.addEventListener('click', () => {
+            stopCamera();
+            startCamera();
+        });
+
+        // Start camera on page load
+        startCamera();
+    </script>
+</body>
+</html>
