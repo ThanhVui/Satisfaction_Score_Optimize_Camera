@@ -1,0 +1,14 @@
+version: '3.9'
+
+services:
+  ai_app:
+    build: .
+    container_name: ai_emotion_app
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - PYTHONUNBUFFERED=1
+    restart: always
+    volumes:
+      - .:/app
