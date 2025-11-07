@@ -1,16 +1,15 @@
-FROM python:3.10
+FROM python:3.10-slim
 
 WORKDIR /app
 COPY . /app
 
-# Avoid interactive install and fix apt errors
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    libgl1-mesa-glx \
+# Fix apt repo + install required libs for OpenCV
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
     libglib2.0-0 \
- && apt-get clean \
  && rm -rf /var/lib/apt/lists/*
 
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 EXPOSE 5000
 CMD ["python", "app.py"]
