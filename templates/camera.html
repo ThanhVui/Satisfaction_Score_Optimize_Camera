@@ -287,7 +287,7 @@
             let html = '';
             if (latestEmotionResults.length > 0) {
                 latestEmotionResults.forEach(result => {
-                    html += `<p class='text-gray-800'>Face ${result.face_id.replace('face_', '')}: ${result.max_emotion} (${result.confidence}%), SI: ${result.satisfaction_index} (${result.satisfaction_category})</p>`;
+                    html += `<p class='text-gray-800' style="color: blue;">Face ${result.face_id.replace('face_', '')}: ${result.max_emotion} (${result.confidence}%), SI: ${result.satisfaction_index} (${result.satisfaction_category})</p>`;
                 });
             } else {
                 html = "<p class='text-gray-600'>No faces detected.</p>";
